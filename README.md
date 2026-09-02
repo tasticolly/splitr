@@ -156,6 +156,8 @@ the same operations by other means.
 
 ### Menu bar
 
+![the SplitR menu with no tunnel up: protection is holding and the protected routes are blocked](docs/menubar.png)
+
 The icon shows the state without opening the menu. Shape and colour tell
 "protected", "no tunnel, routes are dropped", "strict", "protection off" and
 "daemon unreachable" apart, and the top line of the menu answers the same
