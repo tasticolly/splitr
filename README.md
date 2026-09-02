@@ -98,7 +98,18 @@ here has been done before.
 
 ## Install
 
-Requires macOS, Go 1.26+, and sshuttle (`brew install sshuttle`).
+```bash
+brew install tasticolly/splitr/splitr
+sudo splitr install
+```
+
+`splitr install` is the part that needs root: it writes the config, adds the
+anchor call to `/etc/pf.conf` and starts the daemon. The menu bar app is not in
+the tap yet, since that needs notarization; build it from a checkout with `make
+menubar`.
+
+From source instead, which is also how you get the menu bar app (needs Go
+1.26+ and sshuttle):
 
 ```bash
 git clone https://github.com/tasticolly/splitr.git
