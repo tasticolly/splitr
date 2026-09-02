@@ -1,0 +1,107 @@
+# SplitR configuration.
+# Canonical path: /usr/local/etc/splitr/config.yaml
+# After editing: sudo splitr reload  (or the "Reload config" button in the UI)
+
+default_profile: pc
+
+# Routes that are pushed through the sshuttle tunnel.
+# The private ranges are the usual bulk of a corporate network; the public
+# entries are the handful of services that must also be reached from the
+# inside, listed as /32 where a single host is enough. Replace all of this
+# with your own routes: the addresses below are the documentation ranges from
+# RFC 5737 and route nowhere.
+subnets:
+  - 10.0.0.0/9
+  - 10.128.0.0/10
+  - 10.192.0.0/12
+  - 172.16.0.0/12
+  - 192.168.0.0/16
+  - 203.0.113.0/24
+  - 198.51.100.0/24
+  - 192.0.2.10/32
+  - 192.0.2.11/32
+
+# Never routed and never blocked: the home LAN.
+excludes:
+  - 192.168.1.0/24
+
+protection:
+  enabled: true
+  # all    — protect every route in subnets (minus excludes/allow).
+  # public — protect only the public ranges, where the source address is
+  #          visible to the far side. Local 10/172.16/192.168 stay reachable.
+  # custom — protect exactly what is listed in block.
+  # off    — protect nothing.
+  mode: all
+  block: []
+  # Never protected (home router, printer, NAS and so on).
+  allow:
+    - 192.168.1.0/24
+  # Also drop DNS queries to the internal resolvers, so host names are not
+  # sent outside the tunnel.
+  block_dns: false
+  dns_servers: []
+  # Drop live pf states when the tunnel goes down, so open connections do not
+  # outlive it.
+  kill_states: true
+  # Write dropped packets to pflog0. This is what makes `splitr blocked` and
+  # the live stream in the web interface work.
+  log: false
+
+# One entry per exit host. pre_kill_remote runs over ssh before the tunnel is
+# taken down — useful for stopping something on the far side that would
+# otherwise be left hanging.
+profiles:
+  pc:
+    remote: user@192.0.2.20
+    dns: true
+    pre_kill_remote:
+      - pkill -f my-agent.py
+  laptop:
+    remote: user@192.0.2.21
+    dns: true
+
+sshuttle:
+  path: /opt/homebrew/bin/sshuttle
+  ssh_options:
+    - ServerAliveInterval=15
+    - ServerAliveCountMax=4
+    - TCPKeepAlive=yes
+  # sshuttle by default caps in-flight data at 32 KB per tunnel, so that one
+  # large transfer cannot starve the other sessions sharing it. At ~50 ms
+  # round-trip that works out to roughly 5 Mbit/s for the whole tunnel, which
+  # a single screen share can saturate on its own — the symptom is a call that
+  # stutters while audio stays fine. 256 KB lifts the ceiling to ~40 Mbit/s.
+  # The trade is the one sshuttle warns about: a heavy transfer can now add
+  # latency to everything else in the tunnel.
+  extra_args: ["--latency-buffer-size", "262144"]
+
+dns:
+  update_script: /usr/local/bin/update_dns.sh
+  flush_cache: true
+
+daemon:
+  http_addr: 127.0.0.1:8787
+  socket_path: /var/run/splitr.sock
+  socket_group: staff
+  watchdog_interval: 3s
+  # Bring the tunnel back up if it dies.
+  autoreconnect: false
+  reconnect_delay: 5s
+  log_file: /usr/local/var/log/splitr.log
+  # The log restarts once it outgrows log_max_bytes; older generations stay
+  # next to it as .1, .2 and so on. Without this the file would grow without
+  # bound: the daemon runs for months and launchd does not watch its size.
+  log_max_bytes: 8388608
+  log_keep: 3
+  # A control address known to be outside the protected routes: `splitr probe`
+  # uses it to tell working protection from a plain lack of connectivity.
+  probe_control: 1.1.1.1:443
+  state_file: /usr/local/var/run/splitr.state.json
+
+# Where new versions come from. Versions live in the tags of the local clone
+# this product is built in; there is no remote repository. An empty repo_path
+# means updating is unavailable, which is not an error.
+update:
+  repo_path: /Users/you/projects/splitr
+  check_interval: 1h

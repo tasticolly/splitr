@@ -1,0 +1,50 @@
+# Конфиг splitr для e2e-стенда.
+# Сети стенда: net_front 10.77.1.0/24 (client+remote), net_back 10.77.2.0/24 (remote+target).
+default_profile: docker
+
+# В туннель заворачивается вся дальняя сеть.
+subnets:
+  - 10.77.2.0/24
+
+# Ближняя сеть не заворачивается: по ней идёт сам ssh до remote.
+excludes:
+  - 10.77.1.0/24
+
+protection:
+  enabled: true
+  mode: all
+  block: []
+  allow:
+    - 10.77.1.0/24
+  block_dns: false
+  dns_servers: []
+  kill_states: true
+
+profiles:
+  docker:
+    remote: root@10.77.1.20
+    ssh_key: /etc/splitr/id_ed25519
+    known_hosts: /dev/null
+    dns: false
+
+sshuttle:
+  path: /usr/bin/sshuttle
+  ssh_options:
+    - StrictHostKeyChecking=no
+    - ServerAliveInterval=15
+    - ServerAliveCountMax=4
+  extra_args: []
+
+dns:
+  update_script: ""
+  flush_cache: false
+
+daemon:
+  http_addr: 127.0.0.1:8787
+  socket_path: /var/run/splitr.sock
+  socket_group: root
+  watchdog_interval: 1s
+  autoreconnect: false
+  reconnect_delay: 2s
+  log_file: /var/log/splitr.log
+  state_file: /var/run/splitr.state.json

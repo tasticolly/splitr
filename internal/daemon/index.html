@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SplitR</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --fg: #14161a; --muted: #6b7280; --card: #fff;
+    --line: #e3e6ea; --ok: #1a7f37; --bad: #b42318; --warn: #b45309;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#111316; --fg:#e8eaed; --muted:#9aa2ad; --card:#1a1d21;
+            --line:#2a2e34; --ok:#4ac26b; --bad:#ff6b5e; --warn:#e0a33c; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:24px; background:var(--bg); color:var(--fg);
+         font:14px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; }
+  h1 { font-size:18px; margin:0 0 16px; }
+  .wrap { max-width:820px; margin:0 auto; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px;
+          padding:16px; margin-bottom:14px; }
+  .row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  .pill { display:inline-flex; align-items:center; gap:6px; padding:4px 10px;
+          border-radius:999px; font-weight:600; font-size:13px; border:1px solid var(--line); }
+  .dot { width:8px; height:8px; border-radius:50%; background:var(--muted); }
+  .ok .dot { background:var(--ok); } .bad .dot { background:var(--bad); }
+  .warn .dot { background:var(--warn); }
+  button { font:inherit; padding:7px 14px; border-radius:8px; border:1px solid var(--line);
+           background:var(--card); color:var(--fg); cursor:pointer; }
+  button:hover { border-color:var(--muted); }
+  button.danger { color:var(--bad); }
+  select { font:inherit; padding:6px 10px; border-radius:8px;
+           border:1px solid var(--line); background:var(--card); color:var(--fg); }
+  .k { color:var(--muted); min-width:150px; display:inline-block; }
+  code, pre { font-family:"SF Mono", Menlo, monospace; font-size:12px; }
+  pre { overflow-x:auto; background:var(--bg); padding:10px; border-radius:8px;
+        border:1px solid var(--line); margin:8px 0 0; }
+  .nets { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+  .net { padding:2px 8px; border:1px solid var(--line); border-radius:6px; font-size:12px; }
+  .msg { margin-top:10px; color:var(--warn); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>SplitR</h1>
+
+  <div class="card">
+    <div class="row">
+      <span id="tunnelPill" class="pill"><span class="dot"></span><span id="tunnelText">…</span></span>
+      <span id="ksPill" class="pill"><span class="dot"></span><span id="ksText">…</span></span>
+      <span id="blockPill" class="pill"><span class="dot"></span><span id="blockText">…</span></span>
+    </div>
+    <div class="row" style="margin-top:14px">
+      <select id="profile"></select>
+      <button onclick="post('/up', {profile: document.getElementById('profile').value})">Tunnel up</button>
+      <button onclick="post('/down')">Tunnel down</button>
+      <button onclick="post('/reload')">Reload config</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <span class="k" style="min-width:0">Policy:</span>
+      <button onclick="post('/protect', {policy:'all'})">all — every route</button>
+      <button onclick="post('/protect', {policy:'public'})">public — public ranges only</button>
+      <button onclick="post('/protect', {policy:'custom'})">custom</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button onclick="post('/protect', {mode:'on'})">Protection on</button>
+      <button onclick="post('/protect', {mode:'off'})">off</button>
+      <button class="danger" onclick="post('/protect', {mode:'strict'})">strict (drop unconditionally)</button>
+      <button onclick="post('/probe')">Verify protection</button>
+    </div>
+    <div id="msg" class="msg"></div>
+  </div>
+
+  <div class="card">
+    <div><span class="k">Profile</span><b id="profileName">—</b></div>
+    <div><span class="k">sshuttle pid</span><span id="pid">—</span></div>
+    <div><span class="k">sshuttle anchors</span><span id="anchors">—</span></div>
+    <div><span class="k">pf enabled</span><span id="pf">—</span></div>
+    <div><span class="k">anchor loaded</span><span id="anchorLoaded">—</span></div>
+    <div><span class="k">anchor linked</span><span id="anchorLinked">—</span></div>
+    <div><span class="k">config</span><code id="cfgPath">—</code></div>
+    <div><span class="k">policy</span><b id="mode">—</b></div>
+    <div><span class="k">daemon version</span><span id="version">—</span></div>
+    <div><span class="k">daemon uptime</span><span id="uptime">—</span></div>
+  </div>
+
+  <div class="card">
+    <b>Protected routes</b><div id="blocked" class="nets"></div>
+    <b style="display:block;margin-top:12px">Exceptions</b><div id="allowed" class="nets"></div>
+  </div>
+
+  <div class="card">
+    <b>pf rules</b>
+    <pre id="rules">…</pre>
+  </div>
+
+  <div class="card">
+    <div class="row" style="justify-content:space-between">
+      <b>Dropped packets</b>
+      <button id="logBtn" onclick="toggleBlocked()">Watch live</button>
+    </div>
+    <pre id="blockedStream">stream stopped</pre>
+  </div>
+</div>
+
+<script>
+function setPill(id, textId, cls, text) {
+  const el = document.getElementById(id);
+  el.className = 'pill ' + cls;
+  document.getElementById(textId).textContent = text;
+}
+function chips(id, list) {
+  document.getElementById(id).innerHTML =
+    (list || []).map(n => '<span class="net">' + n + '</span>').join('') || '<span class="net">—</span>';
+}
+async function refresh() {
+  const s = await (await fetch('/status')).json();
+  setPill('tunnelPill','tunnelText', s.tunnel === 'up' ? 'ok' : (s.tunnel === 'failed' ? 'bad' : 'warn'),
+          'Tunnel: ' + s.tunnel);
+  setPill('ksPill','ksText', s.protection === 'off' ? 'bad' : 'ok', 'Protection: ' + s.protection);
+  setPill('blockPill','blockText', s.blocking ? 'ok' : 'warn',
+          s.blocking ? 'Protected routes dropped' : 'Protected routes reachable');
+  document.getElementById('profileName').textContent = s.profile || '—';
+  document.getElementById('pid').textContent = s.pid || '—';
+  document.getElementById('anchors').textContent = (s.sshuttle_anchors || []).join(', ') || '—';
+  document.getElementById('pf').textContent = s.pf_enabled ? 'yes' : 'no';
+  document.getElementById('anchorLoaded').textContent = s.anchor_loaded ? 'yes' : 'no';
+  document.getElementById('anchorLinked').textContent = s.anchor_linked ? 'yes' : 'no';
+  document.getElementById('cfgPath').textContent = s.config_path;
+  document.getElementById('mode').textContent = s.mode || '—';
+  document.getElementById('version').textContent = s.version || '—';
+  document.getElementById('uptime').textContent = s.started_at ? uptime(s.started_at) : '—';
+  chips('blocked', s.blocked_nets);
+  chips('allowed', s.allowed_nets);
+  if (s.warnings && s.warnings.length) document.getElementById('msg').textContent = s.warnings.join(' · ');
+  else if (!document.getElementById('msg').dataset.sticky) document.getElementById('msg').textContent = '';
+
+  const cfg = await (await fetch('/config')).json();
+  const sel = document.getElementById('profile');
+  if (sel.options.length === 0) {
+    for (const name of Object.keys(cfg.Profiles || cfg.profiles || {})) {
+      const o = document.createElement('option');
+      o.value = name; o.textContent = name;
+      sel.appendChild(o);
+    }
+    sel.value = s.profile || '';
+  }
+  document.getElementById('rules').textContent = await (await fetch('/rules')).text();
+}
+async function post(path, body) {
+  const msg = document.getElementById('msg');
+  msg.textContent = 'working…'; msg.dataset.sticky = '1';
+  try {
+    const r = await fetch(path, {method:'POST', body: JSON.stringify(body || {})});
+    const j = await r.json();
+    msg.textContent = j.error ? ('error: ' + j.error) : (j.verdict || '');
+  } catch (e) { msg.textContent = 'error: ' + e; }
+  delete msg.dataset.sticky;
+  refresh();
+}
+function uptime(startedAt) {
+  const sec = Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000));
+  const d = Math.floor(sec / 86400), h = Math.floor(sec % 86400 / 3600);
+  const m = Math.floor(sec % 3600 / 60);
+  if (d) return d + 'd ' + h + 'h';
+  if (h) return h + 'h ' + m + 'm';
+  return m + 'm';
+}
+async function loadText(path, id) {
+  const el = document.getElementById(id);
+  el.textContent = 'loading…';
+  try { el.textContent = await (await fetch(path)).text(); }
+  catch (e) { el.textContent = 'error: ' + e; }
+}
+
+let blockedStream = null;
+function toggleBlocked() {
+  const btn = document.getElementById('logBtn');
+  const pane = document.getElementById('blockedStream');
+  if (blockedStream) {
+    blockedStream.close(); blockedStream = null;
+    btn.textContent = 'Watch live';
+    return;
+  }
+  pane.textContent = 'waiting for packets…\n';
+  blockedStream = new EventSource('/blocked');
+  blockedStream.onmessage = e => {
+    pane.textContent += e.data + '\n';
+    pane.scrollTop = pane.scrollHeight;
+  };
+  blockedStream.onerror = () => {
+    pane.textContent += 'stream unavailable: set protection.log in the config and press "Reload config"\n';
+    blockedStream.close(); blockedStream = null;
+    btn.textContent = 'Watch live';
+  };
+  btn.textContent = 'Stop';
+}
+
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>

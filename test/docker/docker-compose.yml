@@ -1,0 +1,56 @@
+# Стенд e2e для splitr: три сервиса и две сети.
+#
+#   client (net_front) ──ssh──> remote (net_front + net_back) ──> target (net_back)
+#
+# Прямого пути client -> net_back нет: docker разводит бриджи разных сетей
+# правилами DOCKER-ISOLATION, поэтому target доступен только через туннель.
+name: splitr-e2e
+
+services:
+  target:
+    image: nginx:alpine
+    container_name: splitr-e2e-target
+    volumes:
+      - ./target/index.html:/usr/share/nginx/html/index.html:ro
+    networks:
+      net_back:
+        ipv4_address: 10.77.2.10
+
+  remote:
+    build:
+      context: ./remote
+    container_name: splitr-e2e-remote
+    volumes:
+      - ${SPLITR_E2E_KEYDIR:?не задан каталог с ключами, запускай через run.sh}:/keys:ro
+    networks:
+      net_front:
+        ipv4_address: 10.77.1.20
+      net_back:
+        ipv4_address: 10.77.2.20
+
+  client:
+    build:
+      context: ../..
+      dockerfile: test/docker/client/Dockerfile
+    container_name: splitr-e2e-client
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    volumes:
+      - ${SPLITR_E2E_KEYDIR:?не задан каталог с ключами, запускай через run.sh}:/keys:ro
+    depends_on:
+      - remote
+      - target
+    networks:
+      net_front:
+        ipv4_address: 10.77.1.10
+
+networks:
+  net_front:
+    ipam:
+      config:
+        - subnet: 10.77.1.0/24
+  net_back:
+    ipam:
+      config:
+        - subnet: 10.77.2.0/24
