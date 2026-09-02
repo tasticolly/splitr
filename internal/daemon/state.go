@@ -23,6 +23,15 @@ type persistedState struct {
 	// Хранится, чтобы при перезапуске сначала взять новую ссылку и только
 	// потом отпустить старую: иначе pf выключился бы вместе с блокировкой.
 	PFToken string `json:"pf_token,omitempty"`
+	// DNSBackup holds the resolvers that were in place before update_script
+	// pointed the system at the tunnel. It is persisted because the daemon can
+	// be restarted while the redirect is live, and a backup kept only in memory
+	// would be lost exactly when it is needed to undo the redirect.
+	DNSBackup []string `json:"dns_backup,omitempty"`
+	// DNSRedirected records that update_script has run and not been undone.
+	// It cannot be inferred from DNSBackup: an empty backup is a legitimate
+	// state (no resolvers were configured) and must still be restored.
+	DNSRedirected bool `json:"dns_redirected,omitempty"`
 }
 
 // LoadPFToken достаёт токен pf из файла состояния.
@@ -52,6 +61,8 @@ func (d *Daemon) saveState() {
 		ProtectionEnabled: &d.cfg.Protection.Enabled,
 		Mode:              string(d.cfg.Protection.Mode),
 		PFToken:           d.pfToken,
+		DNSBackup:         d.dnsBackup,
+		DNSRedirected:     d.dnsRedirected,
 	}
 	d.mu.RUnlock()
 
@@ -105,6 +116,10 @@ func (d *Daemon) restoreState() {
 		d.activeName = st.ActiveProfile
 	}
 	d.strictMode = st.StrictMode
+	// An outstanding redirect is carried across the restart so that the first
+	// tunnel loss after it undoes the redirect this daemon never applied.
+	d.dnsBackup = st.DNSBackup
+	d.dnsRedirected = st.DNSRedirected
 	if st.Mode != "" && config.ProtectionMode(st.Mode) != d.cfg.Protection.Mode {
 		d.cfg.Protection.Mode = config.ProtectionMode(st.Mode)
 	}

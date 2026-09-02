@@ -137,6 +137,12 @@ type fakeOps struct {
 
 	remoteErr, scriptErr, flushErr error
 
+	// Снимок и возврат резолверов.
+	dnsSnapshot   []string
+	dnsSnapErr    error
+	dnsRestored   [][]string
+	dnsRestoreErr error
+
 	// Проверка достижимости хоста перед подъёмом туннеля.
 	reachChecks int
 	reachArgs   []string
@@ -166,6 +172,26 @@ func (o *fakeOps) UpdateDNS(script string) ([]byte, error) {
 	defer o.mu.Unlock()
 	o.scripts = append(o.scripts, script)
 	return []byte("готово"), o.scriptErr
+}
+
+func (o *fakeOps) SnapshotDNS() ([]string, error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.dnsSnapshot, o.dnsSnapErr
+}
+
+func (o *fakeOps) RestoreDNS(servers []string) error {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.dnsRestored = append(o.dnsRestored, servers)
+	return o.dnsRestoreErr
+}
+
+// restores отдаёт зафиксированные вызовы RestoreDNS.
+func (o *fakeOps) restores() [][]string {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.dnsRestored
 }
 
 func (o *fakeOps) FlushDNSCache() error {

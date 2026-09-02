@@ -76,6 +76,11 @@ sshuttle:
   # latency to everything else in the tunnel.
   extra_args: ["--latency-buffer-size", "262144"]
 
+# update_script points the system resolver at the tunnel, which on macOS means
+# 127.0.0.1, where sshuttle answers. The daemon records the resolvers it
+# displaces and puts them back as soon as sshuttle is no longer running, so a
+# tunnel that dies or never connects does not leave the machine resolving
+# against a port nobody is listening on.
 dns:
   update_script: /usr/local/bin/update_dns.sh
   flush_cache: true

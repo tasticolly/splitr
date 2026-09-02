@@ -48,6 +48,11 @@ type Daemon struct {
 	reconnectAt    time.Time
 	reconnectFails int
 
+	// dnsBackup is the resolver list update_script displaced, kept so the
+	// redirect can be undone; dnsRedirected says whether one is outstanding.
+	dnsBackup     []string
+	dnsRedirected bool
+
 	// pfToken и previousPFToken живут в горутине Run и не требуют мьютекса.
 	pfToken         string
 	previousPFToken string
@@ -229,6 +234,18 @@ func (d *Daemon) tick(wasUp bool) bool {
 		d.onTunnelLost()
 	}
 
+	// A DNS redirect with no sshuttle behind it is undone here rather than only
+	// on the up-to-down edge above, because the edge never fires for the case
+	// that caused the bug: a tunnel that never came up at all. update_script
+	// had already pointed the resolver at 127.0.0.1, sshuttle then failed to
+	// reach the host and exited, and since the tunnel was never up there was no
+	// transition to react to. The condition is the running process, not the
+	// tunnel being up, so that the seconds sshuttle spends connecting are not
+	// mistaken for a failure and do not pull the resolver out from under it.
+	if !d.runner.Running() {
+		d.restoreDNS()
+	}
+
 	if err := d.ensurePF(); err != nil {
 		warns = append(warns, err.Error())
 	}
@@ -371,6 +388,18 @@ func (d *Daemon) reconnect() {
 }
 
 func (d *Daemon) onTunnelLost() {
+	// The DNS redirect is undone before anything else, and unconditionally.
+	//
+	// This is the bug it fixes: update_script points the system resolver at
+	// 127.0.0.1, where sshuttle answers DNS through the tunnel. The redirect
+	// used to be applied on the way up and never taken back, so when sshuttle
+	// died - a dropped tunnel, an unreachable host, a crash - the resolver was
+	// left aimed at a port nobody was listening on. Every name lookup on the
+	// machine then had to wait out a timeout before falling back to the second
+	// resolver, which looks exactly like "the network is broken" and has
+	// nothing to do with the tunnel that failed.
+	d.restoreDNS()
+
 	d.mu.RLock()
 	killStates := d.cfg.Protection.KillStates
 	d.mu.RUnlock()
@@ -378,6 +407,56 @@ func (d *Daemon) onTunnelLost() {
 		return
 	}
 	d.flushBlockedStates()
+}
+
+// backupDNS records the current resolvers so the redirect can be undone.
+// A failure here is logged and not fatal: refusing to bring the tunnel up
+// because the resolvers could not be read would trade a small problem for a
+// bigger one. The redirect is still marked, so the restore path will at least
+// clear it back to the DHCP-provided servers.
+func (d *Daemon) backupDNS() {
+	servers, err := d.ops.SnapshotDNS()
+	if err != nil {
+		d.logf("could not record the current resolvers, the restore will fall back to DHCP: %v", err)
+	}
+	d.mu.Lock()
+	d.dnsBackup = servers
+	d.dnsRedirected = true
+	d.mu.Unlock()
+	d.saveState()
+}
+
+// restoreDNS puts the resolvers back and forgets the backup. It is a no-op
+// unless a redirect is actually outstanding, so the repeated calls the watchdog
+// makes while the tunnel is down do not keep rewriting the system settings.
+func (d *Daemon) restoreDNS() {
+	d.mu.Lock()
+	redirected := d.dnsRedirected
+	servers := d.dnsBackup
+	d.dnsRedirected = false
+	d.dnsBackup = nil
+	d.mu.Unlock()
+	if !redirected {
+		return
+	}
+
+	if err := d.ops.RestoreDNS(servers); err != nil {
+		d.logf("could not restore the resolvers: %v", err)
+	} else if len(servers) == 0 {
+		d.logf("resolvers restored to the ones DHCP hands out")
+	} else {
+		d.logf("resolvers restored: %s", strings.Join(servers, ", "))
+	}
+
+	d.mu.RLock()
+	flush := d.cfg.DNS.FlushCache
+	d.mu.RUnlock()
+	if flush {
+		if err := d.ops.FlushDNSCache(); err != nil {
+			d.logf("dns cache flush: %v", err)
+		}
+	}
+	d.saveState()
 }
 
 // flushBlockedStates убивает живые состояния pf к блокируемым сетям.
@@ -640,6 +719,9 @@ func (d *Daemon) prepareDNS(cfg config.Config, p config.Profile) error {
 		}
 	}
 	if cfg.DNS.UpdateScript != "" {
+		// The resolvers are recorded before the script runs, not after: once it
+		// has pointed the system at 127.0.0.1 there is nothing left to read.
+		d.backupDNS()
 		out, err := d.ops.UpdateDNS(cfg.DNS.UpdateScript)
 		d.logf("update_dns: %s", strings.TrimSpace(string(out)))
 		if err != nil {
