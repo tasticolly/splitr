@@ -99,8 +99,9 @@ daemon:
   probe_control: 1.1.1.1:443
   state_file: /usr/local/var/run/splitr.state.json
 
-# Where new versions come from. Versions live in the tags of the local clone
-# this product is built in; there is no remote repository. An empty repo_path
+# Where new versions come from: `splitr update` reads the version tags of a
+# local clone rather than going out to the network, so point repo_path at your
+# own checkout and `git pull` it to pick up new releases. An empty repo_path
 # means updating is unavailable, which is not an error.
 update:
   repo_path: /Users/you/projects/splitr
