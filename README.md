@@ -71,6 +71,31 @@ protected routes immediately was not kept: pf lets a packet through on a state
 table entry without consulting the rules again, so established connections kept
 working.
 
+## Related tools
+
+Both halves of this exist separately and are worth knowing about.
+
+[sshoot](https://github.com/albertodonato/sshoot) manages sshuttle profiles
+from the command line, which it has done well since 2017. It does not concern
+itself with what happens to your traffic when the tunnel is not running.
+
+[vpn-kill-switch/killswitch](https://github.com/vpn-kill-switch/killswitch) is a
+mature macOS kill switch built on pf, and if you use a normal VPN you probably
+want it rather than this. It detects the tunnel by looking at the routing table
+and `utun` interfaces, which is the right approach for WireGuard or IPSec and
+the wrong one for sshuttle, since sshuttle creates neither. It is also enabled
+and disabled by hand, so the protection is only there when you remember to turn
+it on.
+
+[no-YOU-talk-to-the-hand](https://github.com/flashashen/no-YOU-talk-to-the-hand)
+orchestrated sshuttle tunnels from YAML with health checks, which is close in
+spirit, but it has not been touched since 2019 and has no leak protection
+either.
+
+What none of them do is keep a fail-closed rule loaded for sshuttle
+specifically, which is the only thing SplitR adds to the pile. Everything else
+here has been done before.
+
 ## Install
 
 Requires macOS, Go 1.26+, and sshuttle (`brew install sshuttle`).
