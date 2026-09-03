@@ -54,7 +54,22 @@ protection:
 profiles:
   pc:
     remote: user@192.0.2.20
-    dns: true
+    # dns: true sends every lookup on the machine through the tunnel, which is
+    # rarely what you want: the far side resolves through its own servers, so
+    # any public name they refuse to answer for stops working on the laptop
+    # too, even though it is perfectly reachable from here.
+    #
+    # dns_servers is the narrower version. Name the resolvers that answer for
+    # internal names and only lookups addressed to them go through the tunnel;
+    # everything else resolves directly. Pair it with per-domain resolver files
+    # in /etc/resolver so macOS knows which names to send there:
+    #
+    #   /etc/resolver/corp.example.com  ->  nameserver 198.51.100.53
+    #
+    # The two settings contradict each other and the config refuses both at once.
+    dns_servers:
+      - 198.51.100.53
+      - 198.51.100.54
     pre_kill_remote:
       - pkill -f my-agent.py
   laptop:

@@ -443,3 +443,41 @@ func TestMarkUpOnlyPromotesStartingState(t *testing.T) {
 		t.Fatalf("состояние = %q, MarkUp не должен поднимать выключенный туннель", got)
 	}
 }
+
+// Точечный перехват: в туннель уходят только запросы к перечисленным
+// резолверам, весь остальной DNS остаётся на прямом пути.
+func TestArgsCapturesOnlyTheListedResolvers(t *testing.T) {
+	cfg := config.Default()
+	p := config.Profile{Remote: "user@host", DNSServers: []string{"10.73.16.4", "10.73.0.23"}}
+
+	args := strings.Join(NewRunner(cfg.Sshuttle, io.Discard).Args(cfg, p), " ")
+
+	if !strings.Contains(args, "--ns-hosts=10.73.16.4,10.73.0.23") {
+		t.Errorf("в аргументах нет точечного перехвата: %s", args)
+	}
+	// --dns увёл бы в туннель вообще всё и обессмыслил бы список.
+	if strings.Contains(args, " --dns") {
+		t.Errorf("--dns не должен появляться рядом с dns_servers: %s", args)
+	}
+}
+
+func TestArgsCapturesEverythingWithPlainDNS(t *testing.T) {
+	cfg := config.Default()
+	args := strings.Join(NewRunner(cfg.Sshuttle, io.Discard).Args(cfg, config.Profile{Remote: "user@host", DNS: true}), " ")
+
+	if !strings.Contains(args, "--dns") {
+		t.Errorf("ожидался --dns: %s", args)
+	}
+	if strings.Contains(args, "--ns-hosts") {
+		t.Errorf("точечного перехвата не просили: %s", args)
+	}
+}
+
+func TestArgsLeavesDNSAloneByDefault(t *testing.T) {
+	cfg := config.Default()
+	args := strings.Join(NewRunner(cfg.Sshuttle, io.Discard).Args(cfg, config.Profile{Remote: "user@host"}), " ")
+
+	if strings.Contains(args, "--dns") || strings.Contains(args, "--ns-hosts") {
+		t.Errorf("DNS трогать не просили: %s", args)
+	}
+}

@@ -76,7 +76,13 @@ func sshuttleBinary(s config.Sshuttle) string {
 // а в командной строке оставалось старое.
 func (r *Runner) Args(cfg config.Config, p config.Profile) []string {
 	args := []string{"-r", p.Remote, "--ssh-cmd", sshCmd(cfg.Sshuttle, p)}
-	if p.DNS {
+	// --dns captures every lookup; --ns-hosts captures only the ones addressed
+	// to the named resolvers, which is what leaves public DNS on the direct
+	// path. The two are mutually exclusive and the config refuses to hold both.
+	switch {
+	case len(p.DNSServers) > 0:
+		args = append(args, "--ns-hosts="+strings.Join(p.DNSServers, ","))
+	case p.DNS:
 		args = append(args, "--dns")
 	}
 	args = append(args, cfg.Sshuttle.ExtraArgs...)

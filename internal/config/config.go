@@ -3,6 +3,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -78,7 +79,19 @@ type Profile struct {
 	Remote     string `yaml:"remote" json:"remote"`
 	SSHKey     string `yaml:"ssh_key" json:"ssh_key"`
 	KnownHosts string `yaml:"known_hosts" json:"known_hosts"`
-	DNS        bool   `yaml:"dns" json:"dns"`
+	// DNS sends every name lookup on the machine through the tunnel.
+	DNS bool `yaml:"dns" json:"dns"`
+	// DNSServers narrows that down: only lookups addressed to these resolvers
+	// go through the tunnel, everything else is left to resolve directly.
+	//
+	// It exists because "all DNS through the tunnel" is too blunt a setting to
+	// live with. The remote side resolves through the corporate servers, which
+	// answer for internal names and are also subject to whatever filtering the
+	// network applies, so public names that the far end refuses to resolve stop
+	// working on the laptop even though they are reachable from it. Naming the
+	// internal resolvers here keeps internal names working without handing the
+	// far side every other lookup.
+	DNSServers []string `yaml:"dns_servers" json:"dns_servers"`
 	// PreKillRemote — команды, которые выполняются на удалённом хосте перед подъёмом туннеля.
 	PreKillRemote []string `yaml:"pre_kill_remote" json:"pre_kill_remote"`
 	// Subnets переопределяет глобальный список сетей, если задан.
@@ -220,6 +233,14 @@ func (c Config) Validate() error {
 		}
 		if err := checkPrefixes(fmt.Sprintf("profile %q subnets", name), p.Subnets); err != nil {
 			return err
+		}
+		if p.DNS && len(p.DNSServers) > 0 {
+			return fmt.Errorf("profile %q: dns and dns_servers contradict each other, dns sends every lookup through the tunnel and dns_servers only the ones aimed at the listed resolvers; keep one", name)
+		}
+		for _, addr := range p.DNSServers {
+			if net.ParseIP(addr) == nil {
+				return fmt.Errorf("profile %q: dns_servers entry %q is not an IP address", name, addr)
+			}
 		}
 		if err := checkPrefixes(fmt.Sprintf("profile %q excludes", name), p.Excludes); err != nil {
 			return err

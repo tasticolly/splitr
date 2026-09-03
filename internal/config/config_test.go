@@ -568,3 +568,40 @@ update:
 		t.Fatalf("ошибка = %v, ожидался отказ из-за отрицательного интервала", err)
 	}
 }
+
+func TestDNSServersValidation(t *testing.T) {
+	newCfg := func(p Profile) Config {
+		cfg := Default()
+		cfg.Subnets = []string{"10.0.0.0/9"}
+		cfg.DefaultProfile = "pc"
+		cfg.Profiles = map[string]Profile{"pc": p}
+		return cfg
+	}
+
+	t.Run("нормальный список принимается", func(t *testing.T) {
+		cfg := newCfg(Profile{Remote: "user@host", DNSServers: []string{"10.73.16.4", "10.73.0.23"}})
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("ожидалось, что конфиг валиден: %v", err)
+		}
+	})
+
+	// Два взаимоисключающих режима: молча выбрать один — значит сделать
+	// поведение непредсказуемым для того, кто задал оба.
+	t.Run("dns и dns_servers вместе отвергаются", func(t *testing.T) {
+		cfg := newCfg(Profile{Remote: "user@host", DNS: true, DNSServers: []string{"10.73.16.4"}})
+		err := cfg.Validate()
+		if err == nil {
+			t.Fatal("ожидалась ошибка на противоречивую пару")
+		}
+		if !strings.Contains(err.Error(), "contradict") {
+			t.Fatalf("ошибка не объясняет противоречие: %v", err)
+		}
+	})
+
+	t.Run("не-адрес отвергается", func(t *testing.T) {
+		cfg := newCfg(Profile{Remote: "user@host", DNSServers: []string{"corp.example.com"}})
+		if err := cfg.Validate(); err == nil {
+			t.Fatal("ожидалась ошибка: dns_servers принимает только адреса")
+		}
+	})
+}

@@ -230,7 +230,13 @@ means nothing: it could be protection working or simply no internet.
   and the live stream in the UI work;
 * `daemon.log_max_bytes` and `daemon.log_keep`: log rotation. The daemon runs
   as root for months and launchd does not watch the file size;
-* `profiles`: one per exit host.
+* `profiles`: one per exit host. A profile takes either `dns: true`, which
+  sends every lookup through the tunnel, or `dns_servers`, which sends only the
+  lookups addressed to the resolvers you name there. The second is usually what
+  you want: with all DNS tunnelled, any public name the far side declines to
+  resolve stops working locally as well. Point macOS at those resolvers for the
+  internal domains with files in `/etc/resolver`, and the rest of DNS keeps
+  resolving directly.
 
 After editing: `splitr reload`. To check without applying anything,
 `splitr validate <file>` prints the pf rules it would generate.
