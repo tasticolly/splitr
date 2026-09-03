@@ -343,3 +343,26 @@ func TestStatusReportsActionRequired(t *testing.T) {
 		t.Fatalf("пустое требование попало в JSON: %s", raw)
 	}
 }
+
+// Регрессия на подсказку, которая заворачивала в бесконечный круг: сборке из
+// коммита после тега советовали пересобраться, что версию не меняет.
+func TestAheadOfTag(t *testing.T) {
+	tests := []struct {
+		version, tag string
+		want         bool
+	}{
+		{"v0.5.1-3-g321a2e2", "v0.5.1", true},
+		{"v0.5.1-3-g321a2e2-dirty", "v0.5.1", true},
+		// Ровно на теге — совпадение, а не «впереди».
+		{"v0.5.1", "v0.5.1", false},
+		// Бинарь от прошлого релиза: пересборка тут как раз поможет.
+		{"v0.5.0", "v0.5.1", false},
+		{"dev", "v0.5.1", false},
+		{"v0.5.1-3-g321a2e2", "", false},
+	}
+	for _, tt := range tests {
+		if got := aheadOfTag(tt.version, tt.tag); got != tt.want {
+			t.Errorf("aheadOfTag(%q, %q) = %v, ожидалось %v", tt.version, tt.tag, got, tt.want)
+		}
+	}
+}

@@ -89,6 +89,15 @@ func (d *Daemon) ApplyUpdate() (update.State, error) {
 		return st, fmt.Errorf("%s does not run: %w", src, err)
 	}
 	if got != st.Latest {
+		// Two different failures used to share one message, and the advice
+		// only fitted one of them. A binary left over from an older tag does
+		// need rebuilding. A binary built from commits made after the tag
+		// cannot be fixed that way: `git describe` will keep appending the
+		// distance to the tag, so "make update" lands the user right back
+		// here. That case needs a tag, not another build.
+		if aheadOfTag(got, st.Latest) {
+			return st, fmt.Errorf("%s was built from a checkout that sits after the latest tag: it reports %s while the tag is %s. Rebuilding will not change that; tag the new version first with make release V=..., or check out %s", src, got, st.Latest, st.Latest)
+		}
 		return st, fmt.Errorf("%s reports version %s, but the latest tag is %s; rebuild it: make update", src, got, st.Latest)
 	}
 
@@ -132,4 +141,12 @@ func binaryVersion(path string) (string, error) {
 		return "", fmt.Errorf("it printed nothing in response to --version")
 	}
 	return fields[len(fields)-1], nil
+}
+
+// aheadOfTag tells the two version mismatches apart. `git describe --tags`
+// spells a checkout that has moved past its tag as "<tag>-<commits>-g<hash>",
+// optionally with "-dirty", so the tag being a prefix followed by a dash is
+// what distinguishes "newer than the tag" from "some other version entirely".
+func aheadOfTag(version, tag string) bool {
+	return tag != "" && strings.HasPrefix(version, tag+"-")
 }
